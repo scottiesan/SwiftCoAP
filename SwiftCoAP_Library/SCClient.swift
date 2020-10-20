@@ -82,6 +82,13 @@ class SCClient: NSObject {
     fileprivate var recentNotificationInfo: (Date, UInt)!
     lazy fileprivate var cachedMessagePairs = [SCMessage : SCMessage]()
     
+    //HANDLER
+    
+    typealias Handler = (Result<Any, NSError>)->Void
+    
+    private var completionHandler: Handler?
+    private var didSendMessageHandler: Handler?
+    private var failedHandler: Handler?
     
     //MARK: Internal Methods (allowed to use)
     
@@ -113,6 +120,7 @@ class SCClient: NSObject {
                         if message.options[SCOption.observe.rawValue] == nil { cachedMessage.options[SCOption.observe.rawValue] = nil }
                         delegate?.swiftCoapClient(self, didReceiveMessage: cachedMessagePairs[cachedMessage]!)
                         handleBlock2WithMessage(cachedMessagePairs[cachedMessage]!)
+                        self.completionHandler?(Result.success(cachedMessagePairs[cachedMessage]!))
                         return
                     }
                     else {
@@ -240,6 +248,7 @@ class SCClient: NSObject {
             try transportLayerObject.sendCoAPData(data, toHost: host, port: port)
             if notifyDelegateAfterSuccess {
                 delegate?.swiftCoapClient?(self, didSendMessage: messageInTransmission, number: retransmissionCounter + 1)
+                self.didSendMessageHandler?(Result.success(messageInTransmission))
             }
         }
         catch SCCoAPTransportLayerError.sendError(let errorDescription) {
@@ -252,11 +261,15 @@ class SCClient: NSObject {
     }
     
     fileprivate func notifyDelegateWithTransportLayerErrorDescription(_ errorDescription: String) {
-        delegate?.swiftCoapClient?(self, didFailWithError: NSError(domain: SCMessage.kCoapErrorDomain, code: 0, userInfo: [NSLocalizedDescriptionKey : errorDescription]))
+        let error = NSError(domain: SCMessage.kCoapErrorDomain, code: 0, userInfo: [NSLocalizedDescriptionKey : errorDescription])
+        delegate?.swiftCoapClient?(self, didFailWithError: error)
+        self.failedHandler?(Result.failure(error))
     }
     
     fileprivate func notifyDelegateWithErrorCode(_ clientErrorCode: SCClientErrorCode) {
-        delegate?.swiftCoapClient?(self, didFailWithError: NSError(domain: SCMessage.kCoapErrorDomain, code: clientErrorCode.rawValue, userInfo: [NSLocalizedDescriptionKey : clientErrorCode.descriptionString()]))
+        let error = NSError(domain: SCMessage.kCoapErrorDomain, code: clientErrorCode.rawValue, userInfo: [NSLocalizedDescriptionKey : clientErrorCode.descriptionString()])
+        delegate?.swiftCoapClient?(self, didFailWithError: error)
+        self.failedHandler?(Result.failure(error))
     }
     
     fileprivate func handleBlock2WithMessage(_ message: SCMessage) {
@@ -327,6 +340,7 @@ class SCClient: NSObject {
                 }
                 
                 self.delegate?.swiftCoapClient(self, didReceiveMessage: coapResponse)
+                self.completionHandler?(Result.success(coapResponse))
                 self.handleBlock2WithMessage(coapResponse)
             }
         }
@@ -381,6 +395,7 @@ extension SCClient: SCCoAPTransportLayerDelegate {
             
             //Notify Delegate
             delegate?.swiftCoapClient(self, didReceiveMessage: message)
+            self.completionHandler?(Result.success(message))
             
             //Handle Block2
             handleBlock2WithMessage(message)
