@@ -87,7 +87,7 @@ class SCClient: NSObject {
     typealias Handler = (Result<Any, NSError>)->Void
     
     private var completionHandler: Handler?
-    private var didSendMessageHandler: Handler?
+    private var messageSentHandler: Handler?
     private var failedHandler: Handler?
     
     //MARK: Internal Methods (allowed to use)
@@ -99,9 +99,13 @@ class SCClient: NSObject {
         self.transportLayerObject.transportLayerDelegate = self
     }
     
-    func sendCoAPMessage(_ message: SCMessage, hostName: String, port: UInt16) {
+    func sendCoAPMessage(_ message: SCMessage, hostName: String, port: UInt16, completionHandler: Handler? = nil, messageSentHandler: Handler? = nil, failedHandler: Handler? = nil) {
         currentMessageId = (currentMessageId % 0xFFFF) + 1
         
+        
+        self.completionHandler = completionHandler
+        self.messageSentHandler = messageSentHandler
+        self.failedHandler = failedHandler
         message.hostName = hostName
         message.port = port
         message.messageId = currentMessageId
@@ -248,7 +252,7 @@ class SCClient: NSObject {
             try transportLayerObject.sendCoAPData(data, toHost: host, port: port)
             if notifyDelegateAfterSuccess {
                 delegate?.swiftCoapClient?(self, didSendMessage: messageInTransmission, number: retransmissionCounter + 1)
-                self.didSendMessageHandler?(Result.success(messageInTransmission))
+                self.messageSentHandler?(Result.success(messageInTransmission))
             }
         }
         catch SCCoAPTransportLayerError.sendError(let errorDescription) {
